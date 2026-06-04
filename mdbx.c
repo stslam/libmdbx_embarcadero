@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-2-ge5fb2ba8 at 2026-05-31T12:21:23+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-4-gf1208edf at 2026-06-04T17:58:01+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -17534,8 +17534,10 @@ static int dbi_open_locked(MDBX_txn *txn, cursor_couple_t *maindb_cx, unsigned u
 
   rc = dbi_check(txn, slot);
   eASSERT0(env, rc == MDBX_BAD_DBI);
-  if (unlikely(rc != MDBX_BAD_DBI))
-    return MDBX_PROBLEM;
+  if (unlikely(rc != MDBX_BAD_DBI)) {
+    rc = MDBX_PROBLEM;
+    goto bailout;
+  }
 
   /* Find the DB info */
 #if defined(ENABLE_MEMCHECK) || defined(__SANITIZE_ADDRESS__)
@@ -17547,13 +17549,15 @@ static int dbi_open_locked(MDBX_txn *txn, cursor_couple_t *maindb_cx, unsigned u
 #endif /* MEMCHECK || ASAN */
   if (unlikely(rc != MDBX_SUCCESS)) {
     if (rc != MDBX_NOTFOUND || !(user_flags & MDBX_CREATE))
-      return rc;
+      goto bailout;
   }
 
   /* Done here so we cannot fail after creating a new DB */
   clone = osal_malloc(dbi_namelen(name));
-  if (unlikely(!clone))
-    return MDBX_ENOMEM;
+  if (unlikely(!clone)) {
+    rc = MDBX_ENOMEM;
+    goto bailout;
+  }
   memcpy(clone, name.iov_base, name.iov_len);
   name.iov_base = clone;
 
@@ -17599,10 +17603,19 @@ bailout:
   if (clone) {
     eASSERT0(env, !txn->cursors[slot] && !env->kvs[slot].name.iov_len && !env->kvs[slot].name.iov_base);
     osal_free(clone);
-    if (slot + 1 == env->n_dbi)
-      txn->n_dbi = env->n_dbi = (unsigned)slot;
-  } else {
-    eASSERT0(env, name.iov_base == env->kvs[slot].name.iov_base);
+  }
+  if (slot + 1 == env->n_dbi) {
+    env->n_dbi = (unsigned)slot;
+    do {
+      txn->n_dbi = (unsigned)slot;
+#if MDBX_ENABLE_DBI_SPARSE
+      const size_t bitmap_chunk = CHAR_BIT * sizeof(txn->dbi_sparse[0]);
+      const size_t bitmap_indx = slot / bitmap_chunk;
+      const size_t bitmap_mask = (size_t)1 << slot % bitmap_chunk;
+      txn->dbi_sparse[bitmap_indx] &= ~bitmap_mask;
+#endif /* MDBX_ENABLE_DBI_SPARSE */
+      txn = txn->parent;
+    } while (txn);
   }
   return rc;
 }
@@ -41759,10 +41772,10 @@ __dll_export
         0,
         14,
         2,
-        2,
+        4,
         "", /* pre-release suffix of SemVer
-                                        0.14.2.2 */
-        {"2026-05-31T12:21:23+03:00", "5a6f78aa132170ae64ebe07183b458a3b0026b18", "e5fb2ba84ec8462a3d3ee7c8ad4e1c6a30350503", "v0.14.2-2-ge5fb2ba8"},
+                                        0.14.2.4 */
+        {"2026-06-04T17:58:01+03:00", "017be34699abaa4a4624714146fc800d66339166", "f1208edf05ee6797a4f895443f5ff93c3bc7572b", "v0.14.2-4-gf1208edf"},
         sourcery};
 
 __dll_export
