@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-13-g7030afca at 2026-06-12T21:32:43+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-218-g1c249893 at 2026-06-19T00:01:12+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -24,7 +24,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 62b33fca370c57909bcec0be32a6b89f5bf2deee81003b48a5c4f8dde2ec7b28_v0_14_2_13_g7030afca
+#define MDBX_BUILD_SOURCERY b5172e23ec4129ae0e8f9aca482b72564d1319dfb6995a7571a15fd22cb80a2f_v0_14_2_218_g1c249893
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -69,7 +69,12 @@
 #endif /* MinGW */
 
 #if defined(_WIN32) || defined(_WIN64) || defined(_WINDOWS)
+#define IS_WINDOWS 1
+#else
+#define IS_WINDOWS 0
+#endif
 
+#if IS_WINDOWS
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0A00 /* Windows 10 */
 #endif                      /* _WIN32_WINNT */
@@ -1137,7 +1142,7 @@ MDBX_MAYBE_UNUSED static inline void osal_memory_barrier(void) {
 #endif
 #elif defined(__clang__) || defined(__GNUC__)
   __sync_synchronize();
-#elif defined(_WIN32) || defined(_WIN64)
+#elif IS_WINDOWS
   MemoryBarrier();
 #elif defined(__INTEL_COMPILER) /* LY: Intel Compiler may mimic GCC and MSC */
 #if defined(__ia32__)
@@ -1159,7 +1164,7 @@ MDBX_MAYBE_UNUSED static inline void osal_memory_barrier(void) {
 /*----------------------------------------------------------------------------*/
 /* system-depended definitions */
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 #define HAVE_SYS_STAT_H
 #define HAVE_SYS_TYPES_H
 typedef HANDLE osal_thread_t;
@@ -1261,7 +1266,7 @@ LIBMDBX_API char *osal_strdup(const char *str);
 /*----------------------------------------------------------------------------*/
 /* OS abstraction layer stuff */
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 typedef wchar_t pathchar_t;
 #define MDBX_PRIsPATH "ls"
 #else
@@ -1445,6 +1450,11 @@ MDBX_MAYBE_UNUSED static inline int osal_ioring_prepare(osal_ioring_t *ior, size
   return osal_ioring_resize(ior, items);
 }
 
+#if defined(_WIN32) || defined(_WIN64)
+MDBX_INTERNAL HANDLE ior_get_event(osal_ioring_t *ior);
+MDBX_INTERNAL void ior_put_event(osal_ioring_t *ior, HANDLE event);
+#endif
+
 /*----------------------------------------------------------------------------*/
 /* libc compatibility stuff */
 
@@ -1468,11 +1478,11 @@ MDBX_MAYBE_UNUSED MDBX_INTERNAL void osal_jitter(bool tiny);
 
 /* max bytes to write in one call */
 #if defined(_WIN64)
-#define MAX_WRITE UINT32_C(0x10000000)
+#define MAX_IO_BYTES UINT32_C(0x10000000)
 #elif defined(_WIN32)
-#define MAX_WRITE UINT32_C(0x04000000)
+#define MAX_IO_BYTES UINT32_C(0x04000000)
 #else
-#define MAX_WRITE UINT32_C(0x3f000000)
+#define MAX_IO_BYTES UINT32_C(0x3f000000)
 
 #if defined(F_GETLK64) && defined(F_SETLK64) && defined(F_SETLKW64) && !defined(__ANDROID_API__)
 #define MDBX_F_SETLK F_SETLK64
@@ -1541,9 +1551,13 @@ MDBX_INTERNAL int osal_fastmutex_release(osal_fastmutex_t *fastmutex);
 MDBX_INTERNAL int osal_fastmutex_destroy(osal_fastmutex_t *fastmutex);
 
 MDBX_INTERNAL int osal_pwritev(mdbx_filehandle_t fd, struct iovec *iov, size_t sgvcnt, uint64_t offset);
-MDBX_INTERNAL int osal_pread(mdbx_filehandle_t fd, void *buf, size_t count, uint64_t offset);
-MDBX_INTERNAL int osal_pwrite(mdbx_filehandle_t fd, const void *buf, size_t count, uint64_t offset);
-MDBX_INTERNAL int osal_write(mdbx_filehandle_t fd, const void *buf, size_t count);
+MDBX_INTERNAL int osal_pread(mdbx_filehandle_t fd, void *buf, size_t bytes, uint64_t offset);
+MDBX_INTERNAL int osal_pwrite(mdbx_filehandle_t fd, const void *buf, size_t bytes, uint64_t offset);
+MDBX_INTERNAL int osal_write(mdbx_filehandle_t fd, const void *buf, size_t bytes);
+#if defined(_WIN32) || defined(_WIN64)
+MDBX_INTERNAL int osal_pwrite_ev(mdbx_filehandle_t fd, HANDLE ev, const void *buf, size_t bytes, uint64_t offset);
+MDBX_INTERNAL int osal_pread_ev(mdbx_filehandle_t fd, HANDLE ev, void *buf, size_t bytes, uint64_t offset);
+#endif
 
 MDBX_INTERNAL int osal_thread_create(osal_thread_t *thread, THREAD_RESULT(THREAD_CALL *start_routine)(void *),
                                      void *arg);
@@ -1722,7 +1736,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 
 /** Controls checking PID against reuse DB environment after the fork() */
 #ifndef MDBX_ENV_CHECKPID
-#if defined(MADV_DONTFORK) || defined(_WIN32) || defined(_WIN64)
+#if defined(MADV_DONTFORK) || IS_WINDOWS
 /* PID check could be omitted:
  *  - on Linux when madvise(MADV_DONTFORK) is available, i.e. after the fork()
  *    mapped pages will not be available for child process.
@@ -1794,7 +1808,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 /** Controls using Unix' mincore() to determine whether DB-pages
  * are resident in memory. */
 #ifndef MDBX_USE_MINCORE
-#if defined(MINCORE_INCORE) || !(defined(_WIN32) || defined(_WIN64))
+#if defined(MINCORE_INCORE) || !IS_WINDOWS
 #define MDBX_USE_MINCORE 1
 #else
 #define MDBX_USE_MINCORE 0
@@ -1868,7 +1882,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
  * persist ones by write(). This may be reasonable for goofy systems (Windows)
  * which low performance of msync() and/or zany LRU tracking. */
 #ifndef MDBX_AVOID_MSYNC
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 #define MDBX_AVOID_MSYNC 1
 #else
 #define MDBX_AVOID_MSYNC 0
@@ -1893,7 +1907,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 
 /** Avoid dependence from MSVC CRT and use ntdll.dll instead. */
 #ifndef MDBX_WITHOUT_MSVC_CRT
-#if defined(MDBX_BUILD_CXX) && !MDBX_BUILD_CXX && (defined(_WIN32) || defined(_WIN64))
+#if defined(MDBX_BUILD_CXX) && !MDBX_BUILD_CXX && IS_WINDOWS
 #define MDBX_WITHOUT_MSVC_CRT 1
 #else
 #define MDBX_WITHOUT_MSVC_CRT 0
@@ -2018,7 +2032,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #define MDBX_LOCKING_POSIX2008 2008
 
 /** Advanced: Choices the locking implementation (autodetection by default). */
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 #define MDBX_LOCKING MDBX_LOCKING_WIN32FILES
 #else
 #ifndef MDBX_LOCKING
@@ -2983,7 +2997,7 @@ typedef struct shared_lck {
 #define MDBX_READERS_LIMIT 32767
 
 #define MIN_MAPSIZE (MDBX_MIN_PAGESIZE * MIN_PAGENO)
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 #define MAX_MAPSIZE32 UINT32_C(0x38000000)
 #else
 #define MAX_MAPSIZE32 UINT32_C(0x7f000000)
@@ -3018,7 +3032,7 @@ struct libmdbx_globals {
   uint8_t sys_pagesize_ln2;
   uint8_t runtime_flags;
   uint8_t loglevel;
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   bool running_under_Wine;
 #elif defined(__linux__) || defined(__gnu_linux__)
   bool running_on_WSL1 /* Windows Subsystem 1 for Linux */;
@@ -3036,7 +3050,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 extern struct libmdbx_globals globals;
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 extern struct libmdbx_imports imports;
 #endif /* Windows */
 

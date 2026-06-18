@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-13-g7030afca at 2026-06-12T21:32:43+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-218-g1c249893 at 2026-06-19T00:01:12+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -27,7 +27,7 @@
 
 enum { MDBX_STAT_MAXDBS = 2 };
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 
 /* Bit of madness for Windows console */
 #define mdbx_strerror mdbx_strerror_ANSI2OEM
@@ -235,7 +235,7 @@ int main(int argc, char *argv[]) {
   if (optind != argc - 1)
     usage(prog);
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   SetConsoleCtrlHandler(ConsoleBreakHandlerRoutine, true);
 #else
 #ifdef SIGPIPE
@@ -332,7 +332,7 @@ int main(int argc, char *argv[]) {
              mei.mi_mapsize / mei.mi_dxb_pagesize);
       printf("  Current datafile: %" PRIu64 " bytes, %" PRIu64 " pages\n", mei.mi_geo.current,
              mei.mi_geo.current / mei.mi_dxb_pagesize);
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
       if (mei.mi_geo.shrink && mei.mi_geo.current != mei.mi_geo.upper)
         printf("                    WARNING: Due Windows system limitations a "
                "file couldn't\n                    be truncated while database "

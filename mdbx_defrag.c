@@ -1,4 +1,4 @@
-/* This file is part of the libmdbx amalgamated source code (v0.14.2-13-g7030afca at 2026-06-12T21:32:43+03:00).
+/* This file is part of the libmdbx amalgamated source code (v0.14.2-218-g1c249893 at 2026-06-19T00:01:12+03:00).
  *
  * libmdbx (aka MDBX) is an extremely fast, compact, powerful, embeddedable, transactional key-value storage engine with
  * open-source code. MDBX has a specific set of properties and capabilities, focused on creating unique lightweight
@@ -25,7 +25,7 @@
 #define xMDBX_TOOLS /* Avoid using internal ASSERT(), etc */
 #include "mdbx-internals.h"
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
 
 /* Bit of madness for Windows console */
 #define mdbx_strerror mdbx_strerror_ANSI2OEM
@@ -300,7 +300,7 @@ int main(int argc, char *argv[]) {
   if (optind != argc - 1)
     usage();
 
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
   SetConsoleCtrlHandler(ConsoleBreakHandlerRoutine, true);
   is_console = _isatty(_fileno(stdout)) != 0;
 #else
@@ -332,7 +332,7 @@ int main(int argc, char *argv[]) {
   if (rc == MDBX_SUCCESS)
     rc = mdbx_env_open(env, db_pathname, env_flags, 0);
   if ((env_flags & MDBX_EXCLUSIVE) && (rc == MDBX_BUSY ||
-#if defined(_WIN32) || defined(_WIN64)
+#if IS_WINDOWS
                                        rc == ERROR_LOCK_VIOLATION || rc == ERROR_SHARING_VIOLATION
 #else
                                        rc == EBUSY || rc == EAGAIN
