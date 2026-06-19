@@ -434,6 +434,14 @@ __extern_C key_t ftok(const char *, int);
 #include <windows.h>
 #include <winnt.h>
 #include <winternl.h>
+//!!!{
+#if defined(__CODEGEARC__) && defined(__cplusplus) && defined(DEFINE_ENUM_FLAG_OPERATORS)
+/* Embarcadero: Windows SDK defines DEFINE_ENUM_FLAG_OPERATORS without proper constexpr.
+ * Reset it so mdbx.h can install its own constexpr-correct version. */
+#undef DEFINE_ENUM_FLAG_OPERATORS
+#undef CONSTEXPR_ENUM_FLAGS_OPERATIONS
+#endif
+//!!!}
 
 /* После подгрузки windows.h, чтобы избежать проблем со сборкой MINGW и т.п. */
 #include <excpt.h>
@@ -587,10 +595,16 @@ __extern_C key_t ftok(const char *, int);
 #endif
 #endif /* MDBX_HAVE_CMOV */
 
+//!!!{
+#if defined(__CODEGEARC__) && defined(_WIN32) && !defined(YieldProcessor)
+/* Embarcadero intrin.h does not define YieldProcessor; provide it via inline asm */
+#define YieldProcessor() __asm__ __volatile__("pause")
+#endif /* __CODEGEARC__ */
+//!!!}
+
 /*----------------------------------------------------------------------------*/
 /* Compiler's includes for builtins/intrinsics */
-
-#if defined(_MSC_VER) || defined(__INTEL_COMPILER)
+#if defined(_MSC_VER) || defined(__INTEL_COMPILER) 
 #include <intrin.h>
 #elif __GNUC_PREREQ(4, 4) || defined(__clang__)
 #if defined(__e2k__)
@@ -872,7 +886,7 @@ __extern_C key_t ftok(const char *, int);
 #endif /* MDBX_GOOFY_MSVC_STATIC_ANALYZER */
 
 #ifndef FLEXIBLE_ARRAY_MEMBERS
-#if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || (!defined(__cplusplus) && defined(_MSC_VER))
+#if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || (!defined(__cplusplus) && defined(_MSC_VER)) /*{!!!*/|| defined(__CODEGEARC__) /*}!!!*/
 #define FLEXIBLE_ARRAY_MEMBERS 1
 #else
 #define FLEXIBLE_ARRAY_MEMBERS 0
@@ -2349,13 +2363,31 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 #error "The MDBX_64BIT_CAS must be defined before"
 #endif /* MDBX_64BIT_CAS */
 
-#if defined(__cplusplus) && !defined(__STDC_NO_ATOMICS__) && __has_include(<cstdatomic>)
+#if defined(__cplusplus) && !defined(__STDC_NO_ATOMICS__) && __has_include(<cstdatomic>) 
 #include <cstdatomic>
 #define MDBX_HAVE_C11ATOMICS
 #elif !defined(__cplusplus) && (__STDC_VERSION__ >= 201112L || __has_extension(c_atomic)) &&                           \
     !defined(__STDC_NO_ATOMICS__) &&                                                                                   \
     (__GNUC_PREREQ(4, 9) || __CLANG_PREREQ(3, 8) || !(defined(__GNUC__) || defined(__clang__)))
 #include <stdatomic.h>
+//!!!{
+#if defined(__CODEGEARC__)
+/* Embarcadero Clang falls back to Dinkumware stdatomic.h on x86. */
+/* Fix incompatible atomic_* expansions for volatile _Atomic objects:    */
+/* Dinkumware macros do (pobj)->_Atom which breaks on scalar _Atomic.    */
+/* Use Clang __c11_atomic_* builtins directly instead.                   */
+#undef atomic_is_lock_free
+#define atomic_is_lock_free(obj) __c11_atomic_is_lock_free(sizeof(*(obj)))
+#undef atomic_store_explicit
+#define atomic_store_explicit(obj, val, ord) __c11_atomic_store((obj), (val), (ord))
+#undef atomic_load_explicit
+#define atomic_load_explicit(obj, ord) __c11_atomic_load((obj), (ord))
+#undef atomic_compare_exchange_strong
+#define atomic_compare_exchange_strong(obj, exp, val) __c11_atomic_compare_exchange_strong((obj), (exp), (val), __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
+#undef atomic_fetch_add
+#define atomic_fetch_add(obj, val) __c11_atomic_fetch_add((obj), (val), __ATOMIC_SEQ_CST)
+#endif
+//!!!}
 #define MDBX_HAVE_C11ATOMICS
 #elif defined(__GNUC__) || defined(__clang__)
 #elif defined(_MSC_VER)
@@ -2383,14 +2415,28 @@ typedef enum mdbx_memory_order {
 typedef union {
   volatile uint32_t weak;
 #ifdef MDBX_HAVE_C11ATOMICS
+//{!!! proper embarcadero atomic type
+#if defined(__CODEGEARC__) && defined(__clang__)
+  volatile atomic_uint_least32_t c11a;
+#else
   volatile _Atomic uint32_t c11a;
+#endif 
+//}!!!
 #endif /* MDBX_HAVE_C11ATOMICS */
+
+
 } mdbx_atomic_uint32_t;
 
 typedef union {
   volatile uint64_t weak;
 #if defined(MDBX_HAVE_C11ATOMICS) && (MDBX_64BIT_CAS || MDBX_64BIT_ATOMIC)
+//{!!! proper embarcadero atomic type
+#if defined(__CODEGEARC__) && defined(__clang__)
+  volatile atomic_uint_least64_t c11a;
+#else
   volatile _Atomic uint64_t c11a;
+#endif
+//}!!!
 #endif
 #if !defined(MDBX_HAVE_C11ATOMICS) || !MDBX_64BIT_CAS || !MDBX_64BIT_ATOMIC
   __anonymous_struct_extension__ struct {
@@ -2411,6 +2457,12 @@ typedef union {
 #if defined(__e2k__) && defined(__LCC__) && __LCC__ < /* FIXME */ 127
 #define MDBX_c11a_ro(type, ptr) (&(ptr)->weak)
 #define MDBX_c11a_rw(type, ptr) (&(ptr)->weak)
+//!!!{
+#elif defined(__CODEGEARC__)
+/* Embarcadero Clang: cast to _Atomic(type)* so __c11_atomic_* builtins accept the pointer. */
+#define MDBX_c11a_ro(type, ptr) ((volatile _Atomic(type) *)&(ptr)->c11a)
+#define MDBX_c11a_rw(type, ptr) ((volatile _Atomic(type) *)&(ptr)->c11a)
+//!!!}
 #elif defined(__clang__) && __clang__ < 8
 #define MDBX_c11a_ro(type, ptr) ((volatile _Atomic(type) *)&(ptr)->c11a)
 #define MDBX_c11a_rw(type, ptr) (&(ptr)->c11a)
