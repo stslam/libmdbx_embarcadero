@@ -4360,7 +4360,9 @@ __cold int mdbx_env_warmup(const MDBX_env *env, const MDBX_txn *txn, MDBX_warmup
           (MDBX_WORDBITS == 32 && ws_lower > MEGABYTE * 2048) ? ws_lower : ws_lower + MDBX_WORDBITS * MEGABYTE * 32;
       if (!SetProcessWorkingSetSize(GetCurrentProcess(), ws_lower, ws_upper)) {
         rc = (int)GetLastError();
-        WARNING("SetProcessWorkingSetSize(%zu, %zu) error %d", ws_lower, ws_upper, rc);
+        /* Explicit cast to size_t: SIZE_T (ULONG_PTR) and size_t are always the same width on Windows
+         * (32-bit on Win32, 64-bit on Win64), but Embarcadero treats them as distinct types for %zu. */
+        WARNING("SetProcessWorkingSetSize(%zu, %zu) error %d", (size_t)ws_lower, (size_t)ws_upper, rc);
       }
     }
 #endif /* Windows */
@@ -24745,7 +24747,7 @@ static
 #  pragma data_seg(pop)
 #  pragma const_seg(pop)
 
-#elif defined(__GNUC__)
+#elif defined(__GNUC__) || defined(__CODEGEARC__)
 #  ifndef _M_IX86
      const
 #  endif
@@ -27122,7 +27124,9 @@ __cold const char *mdbx_dump_val(const MDBX_val *val, char *const buf, const siz
     }
 
   if (is_ascii) {
-    int len = snprintf(buf, bufsize, "%.*s", (val->iov_len > INT_MAX) ? INT_MAX : (int)val->iov_len, data);
+    /* Outer (int) cast: both branches of the ternary already produce int, but Embarcadero
+     * infers the expression type as long; the cast is a no-op on any conforming compiler. */
+    int len = snprintf(buf, bufsize, "%.*s", (int)((val->iov_len > INT_MAX) ? INT_MAX : (int)val->iov_len), data);
     ASSERT(len > 0 && (size_t)len < bufsize);
     (void)len;
   } else {
